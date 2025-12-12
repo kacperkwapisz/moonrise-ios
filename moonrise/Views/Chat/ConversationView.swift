@@ -99,9 +99,7 @@ struct MessageView: View {
                                             .foregroundStyle(.fill)
                                         Markdown(thinking)
                                             .textSelection(.enabled)
-                                            .markdownTextStyle {
-                                                ForegroundColor(.secondary)
-                                            }
+                                            .markdownTheme(markdownTheme(foregroundColor: .secondary))
                                     }
                                     .padding(.leading, 5)
                                 }
@@ -119,12 +117,16 @@ struct MessageView: View {
                     if let afterThink {
                         Markdown(afterThink)
                             .textSelection(.enabled)
+                            .markdownTheme(markdownTheme(foregroundColor: .primary))
                     }
                 }
                 .padding(.trailing, 48)
             } else {
-                Markdown(message.content)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    Markdown(message.content)
+                        .textSelection(.enabled)
+                        .markdownTheme(markdownTheme(foregroundColor: .primary))
+                }
                 #if os(iOS) || os(visionOS)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -169,11 +171,25 @@ struct MessageView: View {
         return Color(NSColor.secondarySystemFill)
         #endif
     }()
+    
+    private func markdownTheme(foregroundColor: Color) -> Theme {
+        Theme()
+            .text {
+                ForegroundColor(foregroundColor)
+            }
+            .code {
+                FontFamilyVariant(.monospaced)
+                FontSize(.em(0.85))
+            }
+            .codeBlock { content in
+                CodeBlockView(code: content.content, language: content.language)
+            }
+    }
 }
 
 struct ConversationView: View {
-    @Environment(LLMEvaluator.self) var llm
     @EnvironmentObject var appManager: AppManager
+    @Environment(LLMEvaluator.self) var llm
     let thread: Thread
     let generatingThreadID: UUID?
 
@@ -236,6 +252,6 @@ struct ConversationView: View {
 
 #Preview {
     ConversationView(thread: Thread(), generatingThreadID: nil)
-        .environment(LLMEvaluator())
+        .environment(LLMEvaluator(appManager: AppManager()))
         .environmentObject(AppManager())
 }

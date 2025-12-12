@@ -7,11 +7,11 @@ actor APIClient {
         self.configuration = configuration
     }
     
-    func generateResponse(messages: [[String: String]], systemPrompt: String) async throws -> AsyncThrowingStream<String, Error> {
+    func generateResponse(messages: [[String: String]]) async throws -> AsyncThrowingStream<String, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let request = try createRequest(messages: messages, systemPrompt: systemPrompt)
+                    let request = try createRequest(messages: messages)
                     let (data, response) = try await URLSession.shared.data(for: request)
                     
                     guard let httpResponse = response as? HTTPURLResponse,
@@ -27,7 +27,7 @@ actor APIClient {
         }
     }
     
-    private func createRequest(messages: [[String: String]], systemPrompt: String) throws -> URLRequest {
+    private func createRequest(messages: [[String: String]]) throws -> URLRequest {
         var request = URLRequest(url: URL(string: "\(configuration.baseURL)/chat/completions")!)
         request.httpMethod = "POST"
         
@@ -40,7 +40,7 @@ actor APIClient {
         
         let requestBody = ChatCompletionRequest(
             model: configuration.modelName,
-            messages: [["role": "system", "content": systemPrompt]] + messages,
+            messages: messages,
             stream: true,
             temperature: 0.5,
             max_tokens: 4096

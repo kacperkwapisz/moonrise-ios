@@ -110,5 +110,5 @@ struct OnboardingDownloadingModelProgressView: View {
 #Preview {
     OnboardingDownloadingModelProgressView(showOnboarding: .constant(true), selectedModel: .constant(ModelConfiguration.defaultModel))
         .environmentObject(AppManager())
-        .environment(LLMEvaluator())
+        .environment(LLMEvaluator(appManager: AppManager()))
 }

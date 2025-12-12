@@ -36,8 +36,13 @@ struct ContentView: View {
             }
         }
         .environmentObject(appManager)
-        .environment(llm)
         .task {
+            if appManager.isUsingServer {
+                isPromptFocused = true
+                showOnboarding = false
+                return
+            }
+            
             if appManager.preferredProvider == .api {
                 let config = appManager.currentAPIConfiguration ?? APIConfiguration.openAI
                 await llm.switchToAPI(config)

@@ -283,11 +283,25 @@ struct ChatView: View {
                     appManager.playHaptic()
                     sendMessage(Message(role: .user, content: message, thread: currentThread))
                     isPromptFocused = true
-                    if let modelName = appManager.currentModelName {
-                        let output = await llm.generate(modelName: modelName, thread: currentThread, systemPrompt: appManager.systemPrompt)
-                        sendMessage(Message(role: .assistant, content: output, thread: currentThread, generatingTime: llm.thinkingTime))
+                    let resolvedModelName: String? = {
+                        if appManager.isUsingServer {
+                            return appManager.currentModelName ?? llm.selectedServerModel
+                        }
+                        if appManager.preferredProvider == .api {
+                            return appManager.currentAPIConfiguration?.modelName ?? appManager.currentModelName
+                        }
+                        return appManager.currentModelName
+                    }()
+
+                    guard let modelName = resolvedModelName else {
+                        sendMessage(Message(role: .assistant, content: "No model selected. Choose a model in settings first.", thread: currentThread))
                         generatingThreadID = nil
+                        return
                     }
+
+                    let output = await llm.generate(modelName: modelName, thread: currentThread, systemPrompt: appManager.systemPrompt)
+                    sendMessage(Message(role: .assistant, content: output, thread: currentThread, generatingTime: llm.thinkingTime))
+                    generatingThreadID = nil
                 }
             }
         }

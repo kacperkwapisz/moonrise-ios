@@ -6,6 +6,7 @@
 //
 
 import MLXLMCommon
+import Observation
 import os
 import SwiftUI
 
@@ -209,10 +210,4 @@ struct OnboardingInstallModelView: View {
     }
 }
 
-#Preview {
-    @Previewable @State var appManager = AppManager()
-
-    OnboardingInstallModelView(showOnboarding: .constant(true))
-        .environmentObject(appManager)
-        .environment(LLMEvaluator())
-}
+// Preview removed to avoid build-time init issues with required dependencies.
