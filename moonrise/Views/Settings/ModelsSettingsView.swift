@@ -12,10 +12,35 @@ struct ModelsSettingsView: View {
     @EnvironmentObject var appManager: AppManager
     @Environment(LLMEvaluator.self) var llm
     @State var showOnboardingInstallModelView = false
+    @State var showAPISettings = false
     
     var body: some View {
         Form {
-            Section(header: Text("installed")) {
+            Section(header: Text("Provider")) {
+                Picker("Provider", selection: Binding(
+                    get: { llm.currentProvider },
+                    set: { newProvider in
+                        Task {
+                            switch newProvider {
+                            case .local(let model):
+                                appManager.preferredProvider = .local
+                                appManager.currentModelName = model.name
+                                await llm.switchModel(model)
+                            case .api(let config):
+                                appManager.setCurrentAPIConfiguration(config)
+                                await llm.switchToAPI(config)
+                            }
+                        }
+                    }
+                )) {
+                    Text("Local Models").tag(LLMProvider.local(ModelConfiguration.defaultModel))
+                    Text("API").tag(LLMProvider.api(APIConfiguration.openAI))
+                }
+                .pickerStyle(.segmented)
+            }
+            
+            if case .local = llm.currentProvider {
+                Section(header: Text("installed")) {
                 ForEach(appManager.installedModels, id: \.self) { modelName in
                     Button {
                         Task {
@@ -35,14 +60,25 @@ struct ModelsSettingsView: View {
                 }
             }
             
-            Button {
-                showOnboardingInstallModelView.toggle()
-            } label: {
-                Label("install a model", systemImage: "arrow.down.circle.dotted")
+                            Button {
+                    showOnboardingInstallModelView.toggle()
+                } label: {
+                    Label("install a model", systemImage: "arrow.down.circle.dotted")
+                }
+                #if os(macOS)
+                .buttonStyle(.borderless)
+                #endif
             }
-            #if os(macOS)
-            .buttonStyle(.borderless)
-            #endif
+            
+            if case .api = llm.currentProvider {
+                Section(header: Text("API Configuration")) {
+                    Button {
+                        showAPISettings.toggle()
+                    } label: {
+                        Label("Configure API", systemImage: "gear")
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("models")
@@ -60,7 +96,7 @@ struct ModelsSettingsView: View {
                                 Image(systemName: "xmark")
                             }
                         }
-                        #elseif os(macOS)
+                        #elseif os(visionOS)
                         ToolbarItem(placement: .destructiveAction) {
                             Button(action: { showOnboardingInstallModelView = false }) {
                                 Text("close")
@@ -69,6 +105,9 @@ struct ModelsSettingsView: View {
                         #endif
                     }
             }
+        }
+        .sheet(isPresented: $showAPISettings) {
+            APISettingsView()
         }
     }
     

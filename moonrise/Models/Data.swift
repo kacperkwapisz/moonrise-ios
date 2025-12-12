@@ -18,6 +18,8 @@ class AppManager: ObservableObject {
     @AppStorage("shouldPlayHaptics") var shouldPlayHaptics = true
     @AppStorage("numberOfVisits") var numberOfVisits = 0
     @AppStorage("numberOfVisitsOfLastRequest") var numberOfVisitsOfLastRequest = 0
+    @AppStorage("preferredProvider") var preferredProviderRaw = ProviderPreference.local.rawValue
+    @AppStorage("currentAPIConfigID") var currentAPIConfigID: String?
     
     var userInterfaceIdiom: LayoutType {
         #if os(visionOS)
@@ -47,6 +49,33 @@ class AppManager: ObservableObject {
         didSet {
             saveInstalledModelsToUserDefaults()
         }
+    }
+    
+    var preferredProvider: ProviderPreference {
+        get { ProviderPreference(rawValue: preferredProviderRaw) ?? .local }
+        set { preferredProviderRaw = newValue.rawValue }
+    }
+    
+    var currentAPIConfiguration: APIConfiguration? {
+        let storage = APIStorageManager.shared
+        
+        if let idString = currentAPIConfigID,
+           let id = UUID(uuidString: idString),
+           let config = storage.apiConfigurations.first(where: { $0.id == id }) {
+            return config
+        }
+        
+        if let current = storage.currentAPIConfig {
+            return current
+        }
+        
+        return storage.apiConfigurations.first(where: { $0.isDefault }) ?? storage.apiConfigurations.first
+    }
+    
+    func setCurrentAPIConfiguration(_ config: APIConfiguration) {
+        currentAPIConfigID = config.id.uuidString
+        APIStorageManager.shared.setCurrentConfiguration(config)
+        preferredProvider = .api
     }
     
     init() {
@@ -136,6 +165,11 @@ enum Role: String, Codable {
     case assistant
     case user
     case system
+}
+
+enum ProviderPreference: String {
+    case local
+    case api
 }
 
 @Model

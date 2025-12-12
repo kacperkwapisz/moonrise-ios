@@ -22,7 +22,10 @@ struct fullmoonApp: App {
                 .modelContainer(for: [Thread.self, Message.self])
                 .environmentObject(appManager)
                 .environment(llm)
+                // MLX GPU snapshotting crashes on simulator; only enable on device.
+                #if !targetEnvironment(simulator)
                 .environment(DeviceStat())
+                #endif
                 #if os(macOS) || os(visionOS)
                 .frame(minWidth: 640, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
                 #if os(macOS)

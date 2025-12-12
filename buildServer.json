@@ -1,0 +1,19 @@
+{
+	"name": "xcode build server",
+	"version": "0.2",
+	"bspVersion": "2.0",
+	"languages": [
+		"c",
+		"cpp",
+		"objective-c",
+		"objective-cpp",
+		"swift"
+	],
+	"argv": [
+		"/opt/homebrew/bin/xcode-build-server"
+	],
+	"workspace": "/Users/kacper/Vault/Personal/Coding/Projects/moonrise-ios/moonrise.xcodeproj/project.xcworkspace",
+	"build_root": "/Users/kacper/Library/Developer/Xcode/DerivedData/moonrise-aewrgqibwdljsdfjhddatbsbgpxs",
+	"scheme": "moonrise",
+	"kind": "xcode"
+}

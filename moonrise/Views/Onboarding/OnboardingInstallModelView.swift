@@ -11,6 +11,7 @@ import SwiftUI
 
 struct OnboardingInstallModelView: View {
     @EnvironmentObject var appManager: AppManager
+    @Environment(LLMEvaluator.self) var llm
     @State private var deviceSupportsMetal3: Bool = true
     @Binding var showOnboarding: Bool
     @State var selectedModel = ModelConfiguration.defaultModel
@@ -52,98 +53,116 @@ struct OnboardingInstallModelView: View {
                 .frame(maxWidth: .infinity)
             }
             .listRowBackground(Color.clear)
-
-            if appManager.installedModels.count > 0 {
-                Section(header: Text("installed")) {
-                    ForEach(appManager.installedModels, id: \.self) { modelName in
-                        let model = ModelConfiguration.getModelByName(modelName)
-                        Button {} label: {
-                            Label {
-                                Text(appManager.modelDisplayName(modelName))
-                            } icon: {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                        .badge(sizeBadge(model))
-                        #if os(macOS)
-                            .buttonStyle(.borderless)
-                        #endif
-                            .foregroundStyle(.secondary)
-                            .disabled(true)
-                    }
+            
+            Section(header: Text("api (cloud)")) {
+                Button {
+                    selectAPIProvider()
+                } label: {
+                    Label("use cloud models", systemImage: "cloud")
                 }
-            } else {
-                Section(header: Text("suggested")) {
-                    Button { selectedModel = suggestedModel } label: {
-                        Label {
-                            Text(appManager.modelDisplayName(suggestedModel.name))
-                                .tint(.primary)
-                        } icon: {
-                            Image(systemName: selectedModel.name == suggestedModel.name ? "checkmark.circle.fill" : "circle")
-                        }
-                    }
-                    .badge(sizeBadge(suggestedModel))
-                    #if os(macOS)
-                        .buttonStyle(.borderless)
-                    #endif
-                }
+                #if os(macOS)
+                .buttonStyle(.borderless)
+                #endif
+                
+                Text("no local hardware needed — uses your configured api provider")
+                    .foregroundStyle(.secondary)
             }
 
-            if filteredModels.count > 0 {
-                Section(header: Text("other")) {
-                    ForEach(filteredModels, id: \.name) { model in
-                        Button { selectedModel = model } label: {
+            if deviceSupportsMetal3 {
+                if appManager.installedModels.count > 0 {
+                    Section(header: Text("installed")) {
+                        ForEach(appManager.installedModels, id: \.self) { modelName in
+                            let model = ModelConfiguration.getModelByName(modelName)
+                            Button {} label: {
+                                Label {
+                                    Text(appManager.modelDisplayName(modelName))
+                                } icon: {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .badge(sizeBadge(model))
+                            #if os(macOS)
+                                .buttonStyle(.borderless)
+                            #endif
+                                .foregroundStyle(.secondary)
+                                .disabled(true)
+                        }
+                    }
+                } else {
+                    Section(header: Text("suggested")) {
+                        Button { selectedModel = suggestedModel } label: {
                             Label {
-                                Text(appManager.modelDisplayName(model.name))
+                                Text(appManager.modelDisplayName(suggestedModel.name))
                                     .tint(.primary)
                             } icon: {
-                                Image(systemName: selectedModel.name == model.name ? "checkmark.circle.fill" : "circle")
+                                Image(systemName: selectedModel.name == suggestedModel.name ? "checkmark.circle.fill" : "circle")
                             }
                         }
-                        .badge(sizeBadge(model))
+                        .badge(sizeBadge(suggestedModel))
                         #if os(macOS)
                             .buttonStyle(.borderless)
                         #endif
                     }
                 }
-            }
-
-            #if os(macOS)
-            Section {} footer: {
-                NavigationLink(destination: OnboardingDownloadingModelProgressView(showOnboarding: $showOnboarding, selectedModel: $selectedModel)) {
-                    Text("install")
-                        .buttonStyle(.borderedProminent)
+                
+                if filteredModels.count > 0 {
+                    Section(header: Text("other")) {
+                        ForEach(filteredModels, id: \.name) { model in
+                            Button { selectedModel = model } label: {
+                                Label {
+                                    Text(appManager.modelDisplayName(model.name))
+                                        .tint(.primary)
+                                } icon: {
+                                    Image(systemName: selectedModel.name == model.name ? "checkmark.circle.fill" : "circle")
+                                }
+                            }
+                            .badge(sizeBadge(model))
+                            #if os(macOS)
+                                .buttonStyle(.borderless)
+                            #endif
+                        }
+                    }
                 }
-                .disabled(filteredModels.isEmpty)
+                
+                #if os(macOS)
+                Section {} footer: {
+                    NavigationLink(destination: OnboardingDownloadingModelProgressView(showOnboarding: $showOnboarding, selectedModel: $selectedModel)) {
+                        Text("install")
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .disabled(filteredModels.isEmpty)
+                }
+                .padding()
+                #endif
+            } else {
+                Section {
+                    Label("local models require metal 3", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Text("use cloud models above to keep chatting on this device.")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
             }
-            .padding()
-            #endif
         }
         .formStyle(.grouped)
     }
 
     var body: some View {
-        ZStack {
-            if deviceSupportsMetal3 {
-                modelsList
-                #if os(iOS) || os(visionOS)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink(destination: OnboardingDownloadingModelProgressView(showOnboarding: $showOnboarding, selectedModel: $selectedModel)) {
-                            Text("install")
-                                .font(.headline)
-                        }
-                        .disabled(filteredModels.isEmpty)
-                    }
+        modelsList
+        #if os(iOS) || os(visionOS)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(destination: OnboardingDownloadingModelProgressView(showOnboarding: $showOnboarding, selectedModel: $selectedModel)) {
+                    Text("install")
+                        .font(.headline)
                 }
-                .listStyle(.insetGrouped)
-                #endif
-                .task {
-                    checkModels()
-                }
-            } else {
-                DeviceNotSupportedView()
+                .disabled(!deviceSupportsMetal3 || filteredModels.isEmpty)
             }
+        }
+        .listStyle(.insetGrouped)
+        #endif
+        .task {
+            checkModels()
         }
         .onAppear {
             checkMetal3Support()
@@ -179,6 +198,15 @@ struct OnboardingInstallModelView: View {
         }
         #endif
     }
+    
+    func selectAPIProvider() {
+        let config = appManager.currentAPIConfiguration ?? APIConfiguration.openAI
+        appManager.setCurrentAPIConfiguration(config)
+        Task {
+            await llm.switchToAPI(config)
+            showOnboarding = false
+        }
+    }
 }
 
 #Preview {
@@ -186,4 +214,5 @@ struct OnboardingInstallModelView: View {
 
     OnboardingInstallModelView(showOnboarding: .constant(true))
         .environmentObject(appManager)
+        .environment(LLMEvaluator())
 }

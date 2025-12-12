@@ -38,11 +38,18 @@ struct ContentView: View {
         .environmentObject(appManager)
         .environment(llm)
         .task {
-            if appManager.installedModels.count == 0 {
-                showOnboarding.toggle()
+            if appManager.preferredProvider == .api {
+                let config = appManager.currentAPIConfiguration ?? APIConfiguration.openAI
+                await llm.switchToAPI(config)
+                isPromptFocused = true
+                showOnboarding = false
+                return
+            }
+            
+            if appManager.installedModels.isEmpty {
+                showOnboarding = true
             } else {
                 isPromptFocused = true
-                // load the model
                 if let modelName = appManager.currentModelName {
                     _ = try? await llm.load(modelName: modelName)
                 }

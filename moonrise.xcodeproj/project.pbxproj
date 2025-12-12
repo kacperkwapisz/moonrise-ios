@@ -102,7 +102,7 @@
 				869B97632D0DD4D80078DF5A /* MLXLLM */,
 				25F645522D4E7A6F0049EFBE /* Transformers */,
 			);
-			productName = fullmoon;
+			productName = moonrise;
 			productReference = 860E9CCE2CB055B000C5BB52 /* moonrise.app */;
 			productType = "com.apple.product-type.application";
 		};

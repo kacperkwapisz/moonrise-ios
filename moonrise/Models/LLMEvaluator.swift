@@ -15,6 +15,35 @@ enum LLMEvaluatorError: Error {
     case modelNotFound(String)
 }
 
+enum LLMProvider {
+    case local(ModelConfiguration)
+    case api(APIConfiguration)
+}
+
+extension LLMProvider: Hashable {
+    static func == (lhs: LLMProvider, rhs: LLMProvider) -> Bool {
+        switch (lhs, rhs) {
+        case let (.local(lhsModel), .local(rhsModel)):
+            return lhsModel.name == rhsModel.name
+        case let (.api(lhsConfig), .api(rhsConfig)):
+            return lhsConfig.name == rhsConfig.name
+        default:
+            return false
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case let .local(model):
+            hasher.combine("local")
+            hasher.combine(model.name)
+        case let .api(config):
+            hasher.combine("api")
+            hasher.combine(config.name)
+        }
+    }
+}
+
 @Observable
 @MainActor
 class LLMEvaluator {
@@ -39,12 +68,23 @@ class LLMEvaluator {
     private var startTime: Date?
 
     var modelConfiguration = ModelConfiguration.defaultModel
+    
+    var currentProvider: LLMProvider = .local(ModelConfiguration.defaultModel)
+    private var apiClient: APIClient?
 
     func switchModel(_ model: ModelConfiguration) async {
+        currentProvider = .local(model)
         progress = 0.0 // reset progress
         loadState = .idle
         modelConfiguration = model
         _ = try? await load(modelName: model.name)
+    }
+    
+    func switchToAPI(_ config: APIConfiguration) async {
+        currentProvider = .api(config)
+        apiClient = APIClient(configuration: config)
+        progress = 0.0
+        loadState = .idle
     }
 
     /// parameters controlling the output
@@ -106,8 +146,17 @@ class LLMEvaluator {
         output = ""
         startTime = Date()
 
+        switch currentProvider {
+        case .local(let model):
+            return await generateLocal(model: model, thread: thread, systemPrompt: systemPrompt)
+        case .api:
+            return await generateAPI(thread: thread, systemPrompt: systemPrompt)
+        }
+    }
+    
+    private func generateLocal(model: ModelConfiguration, thread: Thread, systemPrompt: String) async -> String {
         do {
-            let modelContainer = try await load(modelName: modelName)
+            let modelContainer = try await load(modelName: model.name)
 
             // augment the prompt as needed
             let promptHistory = await modelContainer.configuration.getPromptHistory(thread: thread, systemPrompt: systemPrompt)
@@ -156,6 +205,30 @@ class LLMEvaluator {
             output = "Failed: \(error)"
         }
 
+        running = false
+        return output
+    }
+    
+    private func generateAPI(thread: Thread, systemPrompt: String) async -> String {
+        guard let apiClient = apiClient else { return "API client not configured" }
+        
+        do {
+            let promptHistory = modelConfiguration.getPromptHistory(thread: thread, systemPrompt: systemPrompt)
+            
+            let stream = try await apiClient.generateResponse(messages: promptHistory, systemPrompt: systemPrompt)
+            
+            for try await chunk in stream {
+                if cancelled {
+                    break
+                }
+                output += chunk
+            }
+            
+            stat = "API response completed"
+        } catch {
+            output = "API Error: \(error)"
+        }
+        
         running = false
         return output
     }
