@@ -17,9 +17,12 @@ struct ModelsSettingsView: View {
     @State private var serverURL = ""
     @State private var serverAPIKey = ""
     @State private var serverType: ServerConfig.ServerType = .openai
+    @State private var lastLoadedServerId: UUID?
 
     var body: some View {
         Form {
+            currentSelectionSection
+
             serverSection
 
             if appManager.isUsingServer {
@@ -114,25 +117,33 @@ struct ModelsSettingsView: View {
             }
         }
         .onChange(of: appManager.selectedServerId) { _ in
-            Task { await loadModels() }
+            Task { await loadModels(force: true) }
         }
         .onChange(of: appManager.isUsingServer) { isServer in
             if isServer {
-                Task { await loadModels() }
+                Task { await loadModels(force: true) }
             }
         }
         .task {
             if isInitialLoad && appManager.isUsingServer {
                 isInitialLoad = false
-                await loadModels()
+                await loadModels(force: true)
             }
         }
     }
 
     // MARK: - Loaders
 
-    private func loadModels() async {
+    private func loadModels(force: Bool = false) async {
         guard let server = appManager.currentServer else { return }
+        if llm.isLoadingModels {
+            return
+        }
+        if !force, let lastLoadedServerId, lastLoadedServerId == server.id, !llm.serverModels.isEmpty {
+            return
+        }
+
+        lastLoadedServerId = server.id
 
         await MainActor.run {
             llm.isLoadingModels = true
@@ -150,12 +161,28 @@ struct ModelsSettingsView: View {
 
     // MARK: - Sections
 
+    private var currentSelectionSection: some View {
+        Section("Current Selection") {
+            infoRow(title: "Model", systemImage: "sparkles", value: appManager.modelDisplayName(appManager.currentModelName ?? "None"))
+            infoRow(title: "Source", systemImage: appManager.isUsingServer ? "antenna.radiowaves.left.and.right" : "cpu", value: appManager.isUsingServer ? "Server API" : "On-device")
+            if appManager.isUsingServer, let server = appManager.currentServer {
+                infoRow(title: "Server", systemImage: "server.rack", value: server.name.isEmpty ? server.url : server.name)
+            }
+        }
+    }
+
     private var serverSection: some View {
         Section {
             Toggle("Use Server API", isOn: $appManager.isUsingServer)
                 .toggleStyle(.switch)
+                .accessibilityHint("Switch between on-device and server-hosted models")
 
             if appManager.isUsingServer {
+                if appManager.servers.isEmpty {
+                    Text("No servers added yet")
+                        .foregroundStyle(.secondary)
+                }
+
                 ForEach(appManager.servers) { server in
                     HStack {
                         Button {
@@ -215,7 +242,7 @@ struct ModelsSettingsView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    Task { await loadModels() }
+                    Task { await loadModels(force: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .foregroundStyle(.secondary)
@@ -228,8 +255,14 @@ struct ModelsSettingsView: View {
 
     private var localModelsSection: some View {
         Section {
-            ForEach(appManager.installedModels, id: \.self) { modelName in
-                modelButton(modelName: modelName, isServer: false)
+            if appManager.installedModels.isEmpty {
+                Text("No local models installed")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            } else {
+                ForEach(appManager.installedModels, id: \.self) { modelName in
+                    modelButton(modelName: modelName, isServer: false)
+                }
             }
 
             Button {
@@ -246,6 +279,17 @@ struct ModelsSettingsView: View {
             Text("Installed Models")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func infoRow(title: String, systemImage: String, value: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 

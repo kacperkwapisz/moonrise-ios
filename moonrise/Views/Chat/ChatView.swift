@@ -23,9 +23,37 @@ struct ChatView: View {
     @State var thinkingTime: TimeInterval?
     
     @State private var generatingThreadID: UUID?
+    @State private var isSending = false
+    @State private var lastUserPrompt: String?
 
     var isPromptEmpty: Bool {
         prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isBusy: Bool {
+        isSending || llm.running
+    }
+
+    private var statusText: String? {
+        if isSending {
+            return "sending..."
+        }
+
+        if llm.running {
+            if llm.isThinking {
+                return "thinking..."
+            }
+            if let elapsed = llm.elapsedTime?.formatted {
+                return "streaming \(elapsed)"
+            }
+            return "streaming..."
+        }
+
+        if llm.cancelled {
+            return "stopped"
+        }
+
+        return nil
     }
 
     let platformBackgroundColor: Color = {
@@ -43,6 +71,7 @@ struct ChatView: View {
             TextField("message", text: $prompt, axis: .vertical)
                 .focused($isPromptFocused)
                 .textFieldStyle(.plain)
+                .accessibilityLabel("Message input")
             #if os(iOS) || os(visionOS)
                 .padding(.horizontal, 16)
             #elseif os(macOS)
@@ -69,6 +98,18 @@ struct ChatView: View {
                 stopButton
             } else {
                 generateButton
+            }
+
+            if isSending && !llm.running {
+                ProgressView()
+                    .controlSize(.regular)
+                    #if os(iOS) || os(visionOS)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 8)
+                    #else
+                        .padding(.trailing, 6)
+                        .padding(.bottom, 6)
+                    #endif
             }
         }
         #if os(iOS) || os(visionOS)
@@ -113,6 +154,7 @@ struct ChatView: View {
         #if os(macOS) || os(visionOS)
         .buttonStyle(.plain)
         #endif
+        .accessibilityLabel("Choose model")
     }
 
     var generateButton: some View {
@@ -128,7 +170,7 @@ struct ChatView: View {
                 .frame(width: 16, height: 16)
             #endif
         }
-        .disabled(isPromptEmpty)
+        .disabled(isPromptEmpty || isBusy)
         #if os(iOS) || os(visionOS)
             .padding(.trailing, 12)
             .padding(.bottom, 12)
@@ -139,6 +181,8 @@ struct ChatView: View {
         #if os(macOS) || os(visionOS)
         .buttonStyle(.plain)
         #endif
+        .accessibilityLabel("Send message")
+        .accessibilityHint("Sends your prompt to the model")
     }
 
     var stopButton: some View {
@@ -165,6 +209,54 @@ struct ChatView: View {
         #if os(macOS) || os(visionOS)
         .buttonStyle(.plain)
         #endif
+        .accessibilityLabel("Stop generation")
+    }
+
+    @ViewBuilder
+    private var statusBar: some View {
+        if let statusText {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let lastUserPrompt, !isBusy {
+                    Button {
+                        retryLastPrompt()
+                    } label: {
+                        Label("Retry last", systemImage: "arrow.clockwise")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.thinMaterial)
+            .accessibilityElement(children: .combine)
+        } else if let lastUserPrompt, !isBusy {
+            HStack {
+                Text("Ready")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    retryLastPrompt()
+                } label: {
+                    Label("Retry last", systemImage: "arrow.clockwise")
+                        .labelStyle(.titleAndIcon)
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.thinMaterial)
+            .accessibilityElement(children: .combine)
+        }
     }
 
     var chatTitle: String {
@@ -197,6 +289,7 @@ struct ChatView: View {
                     chatInput
                 }
                 .padding()
+                statusBar
             }
             .navigationTitle(chatTitle)
             #if os(iOS) || os(visionOS)
@@ -219,7 +312,7 @@ struct ChatView: View {
                     #if os(iOS)
                     .presentationDragIndicator(.visible)
                     .if(appManager.userInterfaceIdiom == .phone) { view in
-                        view.presentationDetents([.fraction(0.4)])
+                        view.presentationDetents([.large])
                     }
                     #elseif os(macOS)
                     .toolbar {
@@ -267,44 +360,59 @@ struct ChatView: View {
     }
 
     private func generate() {
-        if !isPromptEmpty {
-            if currentThread == nil {
-                let newThread = Thread()
-                currentThread = newThread
-                modelContext.insert(newThread)
-                try? modelContext.save()
-            }
+        generate(using: nil)
+    }
 
-            if let currentThread = currentThread {
-                generatingThreadID = currentThread.id
-                Task {
-                    let message = prompt
-                    prompt = ""
-                    appManager.playHaptic()
-                    sendMessage(Message(role: .user, content: message, thread: currentThread))
-                    isPromptFocused = true
-                    let resolvedModelName: String? = {
-                        if appManager.isUsingServer {
-                            return appManager.currentModelName ?? llm.selectedServerModel
-                        }
-                        if appManager.preferredProvider == .api {
-                            return appManager.currentAPIConfiguration?.modelName ?? appManager.currentModelName
-                        }
-                        return appManager.currentModelName
-                    }()
+    private func generate(using customPrompt: String?) {
+        let content = (customPrompt ?? prompt).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return }
 
-                    guard let modelName = resolvedModelName else {
-                        sendMessage(Message(role: .assistant, content: "No model selected. Choose a model in settings first.", thread: currentThread))
-                        generatingThreadID = nil
-                        return
-                    }
-
-                    let output = await llm.generate(modelName: modelName, thread: currentThread, systemPrompt: appManager.systemPrompt)
-                    sendMessage(Message(role: .assistant, content: output, thread: currentThread, generatingTime: llm.thinkingTime))
-                    generatingThreadID = nil
-                }
-            }
+        if currentThread == nil {
+            let newThread = Thread()
+            currentThread = newThread
+            modelContext.insert(newThread)
+            try? modelContext.save()
         }
+
+        guard let currentThread else { return }
+        generatingThreadID = currentThread.id
+        lastUserPrompt = content
+        isSending = true
+
+        Task { @MainActor in
+            if customPrompt == nil {
+                prompt = ""
+            }
+            appManager.playHaptic()
+            sendMessage(Message(role: .user, content: content, thread: currentThread))
+            isPromptFocused = true
+
+            let resolvedModelName: String? = {
+                if appManager.isUsingServer {
+                    return appManager.currentModelName ?? llm.selectedServerModel
+                }
+                if appManager.preferredProvider == .api {
+                    return appManager.currentAPIConfiguration?.modelName ?? appManager.currentModelName
+                }
+                return appManager.currentModelName
+            }()
+
+            guard let modelName = resolvedModelName else {
+                sendMessage(Message(role: .assistant, content: "No model selected. Choose a model in settings first.", thread: currentThread))
+                generatingThreadID = nil
+                isSending = false
+                return
+            }
+
+            let output = await llm.generate(modelName: modelName, thread: currentThread, systemPrompt: appManager.systemPrompt)
+            sendMessage(Message(role: .assistant, content: output, thread: currentThread, generatingTime: llm.thinkingTime))
+            generatingThreadID = nil
+            isSending = false
+        }
+    }
+
+    private func retryLastPrompt() {
+        generate(using: lastUserPrompt)
     }
 
     private func sendMessage(_ message: Message) {

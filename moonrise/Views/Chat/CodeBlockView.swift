@@ -25,6 +25,7 @@ struct CodeBlockView: View {
     let code: String
     let language: String?
     @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .body) private var monoSize: CGFloat = 13
     @State private var isCopied = false
 
     #if canImport(Highlightr)
@@ -41,6 +42,10 @@ struct CodeBlockView: View {
         #endif
     }
 
+    private var displayLanguage: String? {
+        normalizeLanguage(language)
+    }
+
     private func normalizeLanguage(_ language: String?) -> String? {
         guard let language = language?.lowercased() else { return nil }
         return languageMap[language] ?? language
@@ -50,8 +55,8 @@ struct CodeBlockView: View {
         #if canImport(Highlightr)
         guard let highlightr = highlightr else { return nil }
         highlightr.setTheme(to: colorScheme == .dark ? "atom-one-dark" : "atom-one-light")
-        highlightr.theme.codeFont = .monospacedSystemFont(ofSize: 14, weight: .regular)
-        return highlightr.highlight(code, as: normalizeLanguage(language))
+        highlightr.theme.codeFont = .monospacedSystemFont(ofSize: monoSize, weight: .regular)
+        return highlightr.highlight(code, as: displayLanguage)
         #else
         return nil
         #endif
@@ -74,44 +79,69 @@ struct CodeBlockView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if let language {
-                    Text(language)
-                        .font(.caption)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                if let displayLanguage {
+                    Text(displayLanguage.uppercased())
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
                 }
                 Spacer()
-                Button(action: copyToClipboard) {
-                    HStack(spacing: 4) {
-                        Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 12))
-                        Text(isCopied ? "Copied!" : "Copy")
-                            .font(.caption)
+                #if os(iOS) || os(visionOS) || os(macOS)
+                if !code.isEmpty {
+                    ShareLink(item: code) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.caption.weight(.semibold))
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
-                    .background(.secondary.opacity(0.1))
-                    .cornerRadius(6)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Share code")
+                }
+                #endif
+                Button(action: copyToClipboard) {
+                    Label(isCopied ? "Copied" : "Copy", systemImage: isCopied ? "checkmark" : "doc.on.doc")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption.weight(.medium))
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(.secondary.opacity(0.12))
+                        .mask(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isCopied ? "Code copied" : "Copy code")
             }
-            .padding(.bottom, 2)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                if let highlightedCode {
-                    Text(AttributedString(highlightedCode))
-                        .textSelection(.enabled)
-                } else {
-                    Text(code)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                }
+            ScrollView(.horizontal, showsIndicators: true) {
+                codeText
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 2)
             }
         }
-        .padding()
-        .background(platformBackgroundColor)
-        .cornerRadius(8)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(platformBackgroundColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08))
+                )
+        )
+        .animation(.easeInOut(duration: 0.2), value: isCopied)
+    }
+
+    @ViewBuilder
+    private var codeText: some View {
+        if let highlightedCode {
+            Text(AttributedString(highlightedCode))
+                .font(.system(size: monoSize, weight: .regular, design: .monospaced))
+                .textSelection(.enabled)
+                .lineSpacing(4)
+        } else {
+            Text(code)
+                .font(.system(size: monoSize, weight: .regular, design: .monospaced))
+                .textSelection(.enabled)
+                .lineSpacing(4)
+        }
     }
 }
 

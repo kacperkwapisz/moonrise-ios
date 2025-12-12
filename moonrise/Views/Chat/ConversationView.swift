@@ -195,51 +195,85 @@ struct ConversationView: View {
 
     @State private var scrollID: String?
     @State private var scrollInterrupted = false
+    @State private var isAtBottom = true
 
     var body: some View {
         ScrollViewReader { scrollView in
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(thread.sortedMessages) { message in
-                        MessageView(message: message)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(thread.sortedMessages) { message in
+                            MessageView(message: message)
+                                .padding()
+                                .id(message.id.uuidString)
+                        }
+
+                        if llm.running && !llm.output.isEmpty && thread.id == generatingThreadID {
+                            VStack {
+                                MessageView(message: Message(role: .assistant, content: llm.output + " 🌕"))
+                            }
                             .padding()
-                            .id(message.id.uuidString)
+                            .id("output")
+                            .onAppear {
+                                print("output appeared")
+                                scrollInterrupted = false // reset interruption when a new output begins
+                            }
+                        }
+
+                        Rectangle()
+                            .fill(.clear)
+                            .frame(height: 1)
+                            .id("bottom")
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollPosition(id: $scrollID, anchor: .bottom)
+                .onChange(of: llm.output) { _, _ in
+                    // auto scroll to bottom
+                    if !scrollInterrupted {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            scrollView.scrollTo("bottom", anchor: .bottom)
+                        }
                     }
 
-                    if llm.running && !llm.output.isEmpty && thread.id == generatingThreadID {
-                        VStack {
-                            MessageView(message: Message(role: .assistant, content: llm.output + " 🌕"))
-                        }
-                        .padding()
-                        .id("output")
-                        .onAppear {
-                            print("output appeared")
-                            scrollInterrupted = false // reset interruption when a new output begins
-                        }
+                    if !llm.isThinking {
+                        appManager.playHaptic()
                     }
+                }
+                .onChange(of: scrollID) { _, newValue in
+                    let atBottom = newValue == "bottom" || newValue == thread.sortedMessages.last?.id.uuidString
+                    isAtBottom = atBottom
+                    if llm.running && !atBottom {
+                        scrollInterrupted = true
+                    } else if atBottom {
+                        scrollInterrupted = false
+                    }
+                }
+                .onChange(of: llm.running) { _, running in
+                    if !running {
+                        scrollInterrupted = false
+                        isAtBottom = true
+                    }
+                }
 
-                    Rectangle()
-                        .fill(.clear)
-                        .frame(height: 1)
-                        .id("bottom")
-                }
-                .scrollTargetLayout()
-            }
-            .scrollPosition(id: $scrollID, anchor: .bottom)
-            .onChange(of: llm.output) { _, _ in
-                // auto scroll to bottom
-                if !scrollInterrupted {
-                    scrollView.scrollTo("bottom")
-                }
-
-                if !llm.isThinking {
-                    appManager.playHaptic()
-                }
-            }
-            .onChange(of: scrollID) { _, _ in
-                // interrupt auto scroll to bottom if user scrolls away
-                if llm.running {
-                    scrollInterrupted = true
+                if scrollInterrupted && !isAtBottom {
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                            scrollView.scrollTo("bottom", anchor: .bottom)
+                        }
+                        scrollInterrupted = false
+                        scrollID = "bottom"
+                    } label: {
+                        Label("Jump to latest", systemImage: "chevron.down")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial)
+                            .mask(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 12)
+                    .shadow(radius: 3)
+                    .accessibilityLabel("Jump to latest message")
                 }
             }
         }

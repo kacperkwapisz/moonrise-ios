@@ -77,7 +77,7 @@ struct ContentView: View {
                 .environmentObject(appManager)
                 .presentationDragIndicator(.hidden)
                 .if(appManager.userInterfaceIdiom == .phone) { view in
-                    view.presentationDetents([.medium, .large])
+                    view.presentationDetents([.large])
                 }
         }
         .sheet(isPresented: $showSettings) {
@@ -86,7 +86,7 @@ struct ContentView: View {
                 .environment(llm)
                 .presentationDragIndicator(.hidden)
                 .if(appManager.userInterfaceIdiom == .phone) { view in
-                    view.presentationDetents([.medium])
+                    view.presentationDetents([.large])
                 }
         }
         .sheet(isPresented: $showOnboarding, onDismiss: dismissOnboarding) {
